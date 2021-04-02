@@ -102,6 +102,7 @@ class BetterWebSocketApi {
       }
 
       print("web socket 连接成功");
+      socket.pingInterval = Duration(seconds: 30);
 
       // 关闭连接
       if (_isStop) {

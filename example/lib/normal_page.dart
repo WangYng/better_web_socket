@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:better_web_socket/better_web_socket_api.dart';
+import 'package:better_web_socket_example/constant.dart';
 import 'package:better_web_socket_example/main.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -116,11 +117,6 @@ class _NormalPageState extends State<NormalPage> {
   }
 
   void login(BuildContext context) {
-    final loginData = {
-      "authorization": "HBAPI MTEyNjA0MjU6cnFldGdqYXZhbDhxZDAzZzEzcGU0Zmtlb2s=",
-      "msgType": 1
-    };
-
     context.read<DeviceWebSocketController>().setupLoginData(
       jsonEncode(loginData),
       (data) async {

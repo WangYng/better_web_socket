@@ -1,4 +1,5 @@
 import 'package:better_web_socket/better_web_socket.dart';
+import 'package:better_web_socket_example/constant.dart';
 import 'package:better_web_socket_example/normal_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -53,5 +54,5 @@ class MainPage extends StatelessWidget {
 }
 
 class DeviceWebSocketController extends BetterWebSocketController {
-  DeviceWebSocketController() : super("");
+  DeviceWebSocketController() : super(serverUrl);
 }
