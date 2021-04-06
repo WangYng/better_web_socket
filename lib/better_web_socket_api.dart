@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:connectivity/connectivity.dart';
 import 'package:web_socket_channel/io.dart';
 
 enum BetterWebSocketLoginResult {
@@ -23,6 +24,7 @@ class BetterWebSocketApi {
   String _url;
   BetterWebSocketStateCallback _socketStateCallback;
   BetterWebSocketReceiveDataCallback _onReceiveDataCallback;
+  Duration _pingInterval;
   Iterable<String> _protocols;
   Map<String, dynamic> _headers;
   CompressionOptions _compression;
@@ -30,12 +32,17 @@ class BetterWebSocketApi {
   // web socket 信道
   IOWebSocketChannel _channel;
 
-
   // 数据监听
   StreamSubscription _subscription;
 
+  // 网络监听
+  StreamSubscription _connectivitySubscription;
+
   // 是否已经关闭
-  bool _isStop = false;
+  bool _isStopSocket = false;
+
+  // 是否在连接中
+  bool _isSocketConnecting = false;
 
   // 登录相关的数据
   String _loginData;
@@ -58,6 +65,7 @@ class BetterWebSocketApi {
     BetterWebSocketReceiveDataCallback onReceiveDataCallback, {
     BetterWebSocketStateCallback socketStateCallback,
     BetterWebSocketLoginStateCallback loginStateCallback,
+    Duration pingInterval = const Duration(seconds: 30),
     Iterable<String> protocols,
     Map<String, dynamic> headers,
     CompressionOptions compression = CompressionOptions.compressionDefault,
@@ -66,6 +74,7 @@ class BetterWebSocketApi {
     _onReceiveDataCallback = onReceiveDataCallback;
     _socketStateCallback = socketStateCallback;
     _loginStateCallback = loginStateCallback;
+    _pingInterval = pingInterval;
     _protocols = protocols;
     _headers = headers;
     _compression = compression;
@@ -74,16 +83,18 @@ class BetterWebSocketApi {
   }
 
   _connectWebSocket() async {
+    // 开始连接
     if (_socketStateCallback != null) {
       _socketStateCallback(false);
     }
     if (_loginStateCallback != null) {
       _loginStateCallback(false);
     }
+    _isSocketConnecting = true;
 
     // 创建连接
     WebSocket socket;
-    while (!_isStop) {
+    while (!_isStopSocket) {
       print("web socket 连接中...");
       try {
         socket = await WebSocket.connect(
@@ -102,10 +113,10 @@ class BetterWebSocketApi {
       }
 
       print("web socket 连接成功");
-      socket.pingInterval = Duration(seconds: 30);
+      socket.pingInterval = _pingInterval;
 
       // 关闭连接
-      if (_isStop) {
+      if (_isStopSocket) {
         socket?.close();
         return;
       }
@@ -115,13 +126,32 @@ class BetterWebSocketApi {
 
     // 创建通道
     _channel = IOWebSocketChannel(socket);
+
+    // 连接成功
     if (_socketStateCallback != null) {
       _socketStateCallback(true);
+    }
+    _isSocketConnecting = false;
+
+    // 处理连接错误
+    void handleSocketError() {
+      _channel = null;
+      if (_socketStateCallback != null) {
+        _socketStateCallback(false);
+      }
+      if (_loginStateCallback != null) {
+        _loginStateCallback(false);
+      }
+
+      // 连接断开, 进行重连
+      if (!_isStopSocket) {
+        _reConnectWebSocket();
+      }
     }
 
     // 监听数据
     _subscription = _channel.stream.listen((data) async {
-      if (!_isStop) {
+      if (!_isStopSocket) {
         if (!_loginCompleter.isCompleted) {
           print("web socket 收到登录结果");
 
@@ -136,40 +166,35 @@ class BetterWebSocketApi {
         }
       }
     }, onError: (error) {
-      _channel = null;
-      if (_socketStateCallback != null) {
-        _socketStateCallback(false);
-      }
-      if (_loginStateCallback != null) {
-        _loginStateCallback(false);
-      }
-
-      // 连接断开, 进行重连
-      if (!_isStop) {
-        _reConnectWebSocket();
-      }
+      handleSocketError();
     }, onDone: () async {
-      _channel = null;
-      if (_socketStateCallback != null) {
-        _socketStateCallback(false);
-      }
-      if (_loginStateCallback != null) {
-        _loginStateCallback(false);
-      }
+      handleSocketError();
+    });
 
-      // 连接断开, 进行重连
-      if (!_isStop) {
-        _reConnectWebSocket();
+    // 监听网络变化
+    _connectivitySubscription = Connectivity()
+        .onConnectivityChanged
+        .listen((ConnectivityResult result) {
+      if (_channel != null) {
+        _channel.sink.close();
       }
+      handleSocketError();
     });
   }
 
   // 发生错误重连
   _reConnectWebSocket() async {
+
+    if (_isSocketConnecting || _isStopSocket) {
+      return;
+    }
+
+    _isSocketConnecting = true;
+
     print("web socket 连接异常断开, 1s 后重试");
     await Future.delayed(Duration(seconds: 1));
 
-    if (_isStop) {
+    if (_isStopSocket) {
       return;
     }
 
@@ -188,13 +213,14 @@ class BetterWebSocketApi {
 
   /// 中断WebSocket连接
   stopWebSocketConnect() async {
-    if (_isStop){
+    if (_isStopSocket) {
       return;
     }
 
     print("web socket 连接关闭");
 
-    _isStop = true;
+    _isStopSocket = true;
+    _isSocketConnecting = false;
 
     // 取消重登
     if (_loginSubscription != null) {
@@ -206,7 +232,7 @@ class BetterWebSocketApi {
       _loginCompleter.complete(BetterWebSocketLoginResult.FAIL);
     }
 
-    // 关闭socket
+    // 更新状态
     if (_socketStateCallback != null) {
       _socketStateCallback(false);
     }
@@ -214,13 +240,19 @@ class BetterWebSocketApi {
       _loginStateCallback(false);
     }
 
+    // 关闭socket
     if (_channel != null) {
-      await _channel.sink.close();
+      _channel.sink.close();
     }
 
     // 关闭数据监听
     if (_subscription != null) {
-      await _subscription.cancel();
+      _subscription.cancel();
+    }
+
+    // 关闭网络监听
+    if (_connectivitySubscription != null) {
+      _connectivitySubscription.cancel();
     }
   }
 

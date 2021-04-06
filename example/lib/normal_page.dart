@@ -19,6 +19,7 @@ class _NormalPageState extends State<NormalPage> {
   List<String> receiveDataList = [];
 
   ScrollController scrollController = ScrollController();
+  TextEditingController textEditingController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -89,22 +90,58 @@ class _NormalPageState extends State<NormalPage> {
                         CupertinoButton(
                           child: Text("disconnect"),
                           onPressed: () {
-                            disconnect(context);
+                            disconnect(context, Duration(seconds: 3));
                           },
                         ),
                       ],
                     ),
-                    CupertinoButton(
-                      child: Text("login"),
-                      onPressed: () {
-                        login(context);
-                      },
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CupertinoButton(
+                          child: Text("login"),
+                          onPressed: () {
+                            login(context);
+                          },
+                        ),
+                        CupertinoButton(
+                          child: Text("disconnect_immediately"),
+                          onPressed: () {
+                            disconnect(context, Duration.zero);
+                          },
+                        ),
+                      ],
                     ),
                     CupertinoButton(
                       child: Text("clear log"),
                       onPressed: () {
                         clear(context);
                       },
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 200,
+                          height: 44,
+                          child: TextField(
+                            decoration:
+                                InputDecoration(hintText: "message"),
+                            onSubmitted: (String content) {
+                              sendText(textEditingController.text);
+                              textEditingController.text = "";
+                            },
+                            controller: textEditingController,
+                          ),
+                        ),
+                        CupertinoButton(
+                          child: Text("send"),
+                          onPressed: () {
+                            sendText(textEditingController.text);
+                            textEditingController.text = "";
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -144,15 +181,19 @@ class _NormalPageState extends State<NormalPage> {
     });
   }
 
-  void disconnect(BuildContext context) {
+  void disconnect(BuildContext context, Duration duration) {
     context
         .read<DeviceWebSocketController>()
-        .stopWebSocketConnect(duration: Duration(seconds: 3));
+        .stopWebSocketConnect(duration: duration);
   }
 
   void clear(BuildContext context) {
     setState(() {
       receiveDataList.clear();
     });
+  }
+
+  void sendText(String content) {
+    context.read<DeviceWebSocketController>().sendData(content);
   }
 }
