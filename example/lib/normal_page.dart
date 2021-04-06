@@ -177,9 +177,7 @@ class _NormalPageState extends State<NormalPage> {
             duration: Duration(milliseconds: 350), curve: Curves.linear);
       });
     });
-    context.read<DeviceWebSocketController>().startWebSocketConnect(
-          pingInterval: Duration(seconds: 15),
-        );
+    context.read<DeviceWebSocketController>().startWebSocketConnect();
   }
 
   void disconnect(BuildContext context, Duration duration) {
