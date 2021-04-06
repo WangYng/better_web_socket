@@ -1,8 +1,8 @@
 name: better_web_socket
 description: Advanced web socket based on web_socket_channel.
 version: 0.0.1
-author:
-homepage:
+homepage: https://github.com/WangYng
+repository: https://github.com/WangYng/better_web_socket
 
 environment:
   sdk: ">=2.7.0 <3.0.0"

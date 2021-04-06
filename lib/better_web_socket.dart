@@ -14,11 +14,11 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
   /// 连接 web socket
   startWebSocketConnect(
     BetterWebSocketReceiveDataCallback onReceiveDataCallback, {
+    Duration pingInterval = const Duration(seconds: 30),
     Iterable<String> protocols,
     Map<String, dynamic> headers,
     CompressionOptions compression = CompressionOptions.compressionDefault,
   }) {
-
     // 复用socket
     if (_api != null) {
       // 停止关闭socket
@@ -39,6 +39,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
       loginStateCallback: (bool state) {
         value = value.copyWith(loginState: state);
       },
+      pingInterval: pingInterval,
       protocols: protocols,
       headers: headers,
       compression: compression,
@@ -59,6 +60,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
         _api = null;
         _stopSocketSubscription = null;
       }
+
       _stopSocketSubscription = stream().listen((event) {});
     } else {
       // 立即断开

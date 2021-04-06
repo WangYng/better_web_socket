@@ -125,8 +125,7 @@ class _NormalPageState extends State<NormalPage> {
                           width: 200,
                           height: 44,
                           child: TextField(
-                            decoration:
-                                InputDecoration(hintText: "message"),
+                            decoration: InputDecoration(hintText: "message"),
                             onSubmitted: (String content) {
                               sendText(textEditingController.text);
                               textEditingController.text = "";
@@ -169,16 +168,17 @@ class _NormalPageState extends State<NormalPage> {
   }
 
   void connect(BuildContext context) {
-    context
-        .read<DeviceWebSocketController>()
-        .startWebSocketConnect((data) async {
-      setState(() {
-        receiveDataList
-            .add("${DateTime.now().toString().substring(0, 19)} $data");
-        scrollController.animateTo(0,
-            duration: Duration(milliseconds: 350), curve: Curves.linear);
-      });
-    });
+    context.read<DeviceWebSocketController>().startWebSocketConnect(
+      (data) async {
+        setState(() {
+          receiveDataList
+              .add("${DateTime.now().toString().substring(0, 19)} $data");
+          scrollController.animateTo(0,
+              duration: Duration(milliseconds: 350), curve: Curves.linear);
+        });
+      },
+      pingInterval: Duration(seconds: 15),
+    );
   }
 
   void disconnect(BuildContext context, Duration duration) {

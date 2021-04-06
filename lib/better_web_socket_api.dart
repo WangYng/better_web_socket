@@ -65,7 +65,7 @@ class BetterWebSocketApi {
     BetterWebSocketReceiveDataCallback onReceiveDataCallback, {
     BetterWebSocketStateCallback socketStateCallback,
     BetterWebSocketLoginStateCallback loginStateCallback,
-    Duration pingInterval = const Duration(seconds: 30),
+    Duration pingInterval,
     Iterable<String> protocols,
     Map<String, dynamic> headers,
     CompressionOptions compression = CompressionOptions.compressionDefault,
