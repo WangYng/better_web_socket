@@ -24,6 +24,9 @@ class BetterWebSocketApi {
   String _url;
   BetterWebSocketStateCallback _socketStateCallback;
   BetterWebSocketReceiveDataCallback _onReceiveDataCallback;
+  set onReceiveDataCallback(BetterWebSocketReceiveDataCallback value) {
+    _onReceiveDataCallback = value;
+  }
   Duration _pingInterval;
   Iterable<String> _protocols;
   Map<String, dynamic> _headers;
@@ -61,8 +64,7 @@ class BetterWebSocketApi {
 
   /// 启动WebSocket连接
   startWebSocketConnect(
-    String url,
-    BetterWebSocketReceiveDataCallback onReceiveDataCallback, {
+    String url, {
     BetterWebSocketStateCallback socketStateCallback,
     BetterWebSocketLoginStateCallback loginStateCallback,
     Duration pingInterval,
@@ -71,7 +73,6 @@ class BetterWebSocketApi {
     CompressionOptions compression = CompressionOptions.compressionDefault,
   }) async {
     _url = url;
-    _onReceiveDataCallback = onReceiveDataCallback;
     _socketStateCallback = socketStateCallback;
     _loginStateCallback = loginStateCallback;
     _pingInterval = pingInterval;

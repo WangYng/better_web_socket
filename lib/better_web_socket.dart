@@ -11,9 +11,14 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
 
   StreamSubscription _stopSocketSubscription;
 
+  BetterWebSocketReceiveDataCallback _onReceiveDataCallback;
+
+  set onReceiveDataCallback(BetterWebSocketReceiveDataCallback value) {
+    _onReceiveDataCallback = value;
+  }
+
   /// 连接 web socket
-  startWebSocketConnect(
-    BetterWebSocketReceiveDataCallback onReceiveDataCallback, {
+  startWebSocketConnect({
     Duration pingInterval = const Duration(seconds: 30),
     Iterable<String> protocols,
     Map<String, dynamic> headers,
@@ -21,6 +26,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
   }) {
     // 复用socket
     if (_api != null) {
+      _api.onReceiveDataCallback = _onReceiveDataCallback;
       // 停止关闭socket
       if (_stopSocketSubscription != null) {
         _stopSocketSubscription.cancel();
@@ -30,9 +36,9 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
     }
 
     _api = BetterWebSocketApi();
+    _api.onReceiveDataCallback = _onReceiveDataCallback;
     _api.startWebSocketConnect(
       value.url,
-      onReceiveDataCallback,
       socketStateCallback: (bool state) {
         value = value.copyWith(socketState: state);
       },
@@ -47,8 +53,8 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
   }
 
   /// 断开 web socket
-  stopWebSocketConnect({Duration duration}) {
-    if (duration != Duration.zero) {
+  stopWebSocketConnect({Duration duration = const Duration(seconds: 3)}) {
+    if (duration != null && duration != Duration.zero) {
       // 延迟断开
       if (_stopSocketSubscription != null) {
         _stopSocketSubscription.cancel();
@@ -57,6 +63,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
         await Future.delayed(duration);
         yield 1;
         _api?.stopWebSocketConnect();
+        _api?.onReceiveDataCallback = null;
         _api = null;
         _stopSocketSubscription = null;
       }
@@ -65,6 +72,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
     } else {
       // 立即断开
       _api?.stopWebSocketConnect();
+      _api?.onReceiveDataCallback = null;
       _api = null;
     }
   }

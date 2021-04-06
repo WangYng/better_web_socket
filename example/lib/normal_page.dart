@@ -168,17 +168,18 @@ class _NormalPageState extends State<NormalPage> {
   }
 
   void connect(BuildContext context) {
+    context.read<DeviceWebSocketController>().onReceiveDataCallback =
+        ((data) async {
+      setState(() {
+        receiveDataList
+            .add("${DateTime.now().toString().substring(0, 19)} $data");
+        scrollController.animateTo(0,
+            duration: Duration(milliseconds: 350), curve: Curves.linear);
+      });
+    });
     context.read<DeviceWebSocketController>().startWebSocketConnect(
-      (data) async {
-        setState(() {
-          receiveDataList
-              .add("${DateTime.now().toString().substring(0, 19)} $data");
-          scrollController.animateTo(0,
-              duration: Duration(milliseconds: 350), curve: Curves.linear);
-        });
-      },
-      pingInterval: Duration(seconds: 15),
-    );
+          pingInterval: Duration(seconds: 15),
+        );
   }
 
   void disconnect(BuildContext context, Duration duration) {
