@@ -153,7 +153,7 @@ class BetterWebSocketApi {
     // 监听数据
     _subscription = _channel.stream.listen((data) async {
       if (!_isStopSocket) {
-        if (!_loginCompleter.isCompleted) {
+        if (_loginCompleter != null && !_loginCompleter.isCompleted) {
           print("web socket 收到登录结果");
 
           // 处理登录结果
