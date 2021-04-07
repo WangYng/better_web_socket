@@ -183,7 +183,7 @@ class _NormalPageState extends State<NormalPage> {
   void disconnect(BuildContext context, Duration duration) {
     context
         .read<DeviceWebSocketController>()
-        .stopWebSocketConnect(duration: duration);
+        .stopWebSocketConnectAfter(duration: duration);
   }
 
   void clear(BuildContext context) {

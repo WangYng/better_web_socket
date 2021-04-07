@@ -53,7 +53,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
   }
 
   /// 断开 web socket
-  stopWebSocketConnect({Duration duration = const Duration(seconds: 3)}) {
+  stopWebSocketConnectAfter({Duration duration = const Duration(seconds: 3)}) {
     if (duration != null && duration != Duration.zero) {
       // 延迟断开
       if (_stopSocketSubscription != null) {

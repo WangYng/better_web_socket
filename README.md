@@ -8,7 +8,7 @@ Advanced web socket based on web_socket_channel.
 
 ```yaml
 dependencies:
-  better_web_socket: ^0.0.2
+  better_web_socket: ^0.0.3
 ```
 
 2. Install it
@@ -27,6 +27,8 @@ context.read<DeviceWebSocketController>().onReceiveDataCallback = ((data) async 
   });
 });
 context.read<DeviceWebSocketController>().startWebSocketConnect();
+// ....
+context.read<DeviceWebSocketController>().stopWebSocketConnectAfter();
 ```
 
 ## Feature
