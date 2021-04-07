@@ -266,21 +266,21 @@ class BetterWebSocketApi {
       return;
     }
 
-    this._loginData = loginData;
-    this._onLoginCallback = onLoginCallback;
+    _loginData = loginData;
+    _onLoginCallback = onLoginCallback;
 
     if (_loginSubscription != null) {
       _loginSubscription.cancel();
     }
 
-    _loginSubscription = login(loginData, onLoginCallback).listen((event) {});
+    _loginSubscription = _login(loginData, onLoginCallback).listen((event) {});
     _loginSubscription.onDone(() {
       _loginSubscription = null;
     });
   }
 
   /// 登录
-  Stream<int> login(
+  Stream<int> _login(
     String loginData,
     BetterWebSocketLoginCallback onLoginCallback,
   ) async* {
@@ -330,12 +330,12 @@ class BetterWebSocketApi {
 
       yield 2;
 
-      yield* login(loginData, onLoginCallback);
+      yield* _login(loginData, onLoginCallback);
     }
 
     // 登录超时
     if (result == BetterWebSocketLoginResult.TIMEOUT) {
-      yield* login(loginData, onLoginCallback);
+      yield* _login(loginData, onLoginCallback);
     }
   }
 
