@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:better_web_socket/better_web_socket.dart';
 import 'package:better_web_socket/better_web_socket_api.dart';
 import 'package:better_web_socket_example/constant.dart';
 import 'package:better_web_socket_example/main.dart';
@@ -20,6 +22,11 @@ class _NormalPageState extends State<NormalPage> {
 
   ScrollController scrollController = ScrollController();
   TextEditingController textEditingController = TextEditingController();
+
+  StreamSubscription receiveDataSubscription;
+  StreamSubscription sendDataResponseStateSubscription;
+
+  int sendingDataId;
 
   @override
   Widget build(BuildContext context) {
@@ -70,13 +77,7 @@ class _NormalPageState extends State<NormalPage> {
                     ),
                     Container(
                       padding: EdgeInsets.all(8),
-                      child: Text(
-                          "socket connected : ${controller.value.socketState ? "🟢" : "🔴"}"),
-                    ),
-                    Container(
-                      padding: EdgeInsets.all(8),
-                      child: Text(
-                          "socket login state : ${controller.value.loginState ? "🟢" : "🔴"}"),
+                      child: Text("socket connected : ${socketState(controller.value.socketState)}"),
                     ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
@@ -99,9 +100,9 @@ class _NormalPageState extends State<NormalPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         CupertinoButton(
-                          child: Text("login"),
+                          child: Text("sendData"),
                           onPressed: () {
-                            login(context);
+                            sendData();
                           },
                         ),
                         CupertinoButton(
@@ -152,38 +153,41 @@ class _NormalPageState extends State<NormalPage> {
     );
   }
 
-  void login(BuildContext context) {
-    context.read<DeviceWebSocketController>().setupLoginData(
-      jsonEncode(loginData),
-      (data) async {
-        setState(() {
-          receiveDataList
-              .add("${DateTime.now().toString().substring(0, 19)} $data");
-          scrollController.animateTo(0,
-              duration: Duration(milliseconds: 350), curve: Curves.linear);
-        });
-        return BetterWebSocketLoginResult.SUCCESS;
-      },
-    );
-  }
-
   void connect(BuildContext context) {
-    context.read<DeviceWebSocketController>().onReceiveDataCallback =
-        ((data) async {
+    // 监听数据
+    receiveDataSubscription?.cancel();
+    receiveDataSubscription = context.read<DeviceWebSocketController>().receiveDataStream.listen((data) {
+      context.read<DeviceWebSocketController>().handleSendDataResponse(sendingDataId ?? 0, true);
       setState(() {
-        receiveDataList
-            .add("${DateTime.now().toString().substring(0, 19)} $data");
-        scrollController.animateTo(0,
-            duration: Duration(milliseconds: 350), curve: Curves.linear);
+        receiveDataList.add("${DateTime.now().toString().substring(0, 19)} $data");
+        scrollController.animateTo(0, duration: Duration(milliseconds: 350), curve: Curves.linear);
       });
     });
-    context.read<DeviceWebSocketController>().startWebSocketConnect();
+
+    // 监听socket请求数据响应结果
+    sendDataResponseStateSubscription?.cancel();
+    sendDataResponseStateSubscription = context.read<DeviceWebSocketController>().sendDataResponseStateStream.listen((data) {
+      String result = "";
+      switch(data.item2) {
+        case BetterWebSocketSendDataResponseState.SUCCESS:
+          result = "send data success";
+          break;
+        case BetterWebSocketSendDataResponseState.FAIL:
+          result = "send data failure";
+          break;
+        case BetterWebSocketSendDataResponseState.TIMEOUT:
+          result = "send data timeout";
+          break;
+      }
+      print(result);
+    });
+
+    // 连接 web socket
+    context.read<DeviceWebSocketController>().startWebSocketConnect(retryCount: double.maxFinite.toInt());
   }
 
   void disconnect(BuildContext context, Duration duration) {
-    context
-        .read<DeviceWebSocketController>()
-        .stopWebSocketConnectAfter(duration: duration);
+    context.read<DeviceWebSocketController>().stopWebSocketConnectAfter(duration: duration);
   }
 
   void clear(BuildContext context) {
@@ -193,6 +197,36 @@ class _NormalPageState extends State<NormalPage> {
   }
 
   void sendText(String content) {
-    context.read<DeviceWebSocketController>().sendData(content);
+    sendingDataId = context.read<DeviceWebSocketController>().sendData(content, retryCount: 3);
+  }
+
+  void sendData() {
+    sendingDataId = context.read<DeviceWebSocketController>().sendData(jsonEncode(loginData), retryCount: 3);
+  }
+
+  String socketState(BetterWebSocketConnectState state) {
+    String result;
+    switch (state) {
+      case BetterWebSocketConnectState.SUCCESS:
+        result = "🟢";
+        break;
+      case BetterWebSocketConnectState.FAIL:
+        result = "🔴";
+        break;
+      case BetterWebSocketConnectState.CONNECTING:
+        result = "🟡";
+        break;
+    }
+
+    return result;
+  }
+
+  @override
+  void dispose() {
+    scrollController.dispose();
+    textEditingController.dispose();
+    receiveDataSubscription.cancel();
+    sendDataResponseStateSubscription.cancel();
+    super.dispose();
   }
 }

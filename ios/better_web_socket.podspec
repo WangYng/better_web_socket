@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'better_web_socket'
-  s.version          = '0.0.4'
+  s.version          = '0.0.5'
   s.summary          = 'Advanced web socket based on web_socket_channel.'
   s.description      = <<-DESC
 Advanced web socket based on web_socket_channel.

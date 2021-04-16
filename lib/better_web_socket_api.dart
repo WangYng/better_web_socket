@@ -2,79 +2,69 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:connectivity/connectivity.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:tuple/tuple.dart';
 import 'package:web_socket_channel/io.dart';
 
-enum BetterWebSocketLoginResult {
-  SUCCESS,
-  FAIL,
-  TIMEOUT,
+enum BetterWebSocketConnectState {
+  SUCCESS, // 连接成功
+  FAIL, // 连接失败
+  CONNECTING, // 连接中
 }
-
-typedef BetterWebSocketLoginCallback = Future<BetterWebSocketLoginResult>
-    Function(String data);
-
-typedef BetterWebSocketReceiveDataCallback = Future<void> Function(String data);
-
-typedef BetterWebSocketStateCallback = void Function(bool state);
-
-typedef BetterWebSocketLoginStateCallback = void Function(bool state);
 
 class BetterWebSocketApi {
   // web socket 连接时必要信息
   String _url;
-  BetterWebSocketStateCallback _socketStateCallback;
-  BetterWebSocketReceiveDataCallback _onReceiveDataCallback;
-  set onReceiveDataCallback(BetterWebSocketReceiveDataCallback value) {
-    _onReceiveDataCallback = value;
-  }
+
+  // web socket 连接时可选信息
   Duration _pingInterval;
   Iterable<String> _protocols;
   Map<String, dynamic> _headers;
   CompressionOptions _compression;
 
+  // 监听socket状态
+  ValueChanged<BetterWebSocketConnectState> socketStateCallback;
+
+  // 监听数据流
+  ValueChanged<dynamic> receiveDataCallback;
+
+  // 重试
+  int _retryCount;
+  int _originRetryCount;
+  Duration _retryDuration;
+  ValueChanged<int> _retryCallback;
+
   // web socket 信道
   IOWebSocketChannel _channel;
 
   // 数据监听
-  StreamSubscription _subscription;
+  StreamSubscription _socketSubscription;
 
   // 网络监听
   StreamSubscription _connectivitySubscription;
 
+  // 连接中
+  bool _webSocketConnecting = false;
+
   // 是否已经关闭
   bool _isStopSocket = false;
-
-  // 是否在连接中
-  bool _isSocketConnecting = false;
-
-  // 登录相关的数据
-  String _loginData;
-
-  // 登录结果回调
-  BetterWebSocketLoginCallback _onLoginCallback;
-
-  // 等待登录结果回调
-  Completer<BetterWebSocketLoginResult> _loginCompleter;
-
-  // 等待流程事件
-  StreamSubscription _loginSubscription;
-
-  // 登录状态
-  BetterWebSocketLoginStateCallback _loginStateCallback;
 
   /// 启动WebSocket连接
   startWebSocketConnect(
     String url, {
-    BetterWebSocketStateCallback socketStateCallback,
-    BetterWebSocketLoginStateCallback loginStateCallback,
+    int retryCount,
+    Duration retryDuration,
+    ValueChanged<int> retryCallback,
     Duration pingInterval,
     Iterable<String> protocols,
     Map<String, dynamic> headers,
     CompressionOptions compression = CompressionOptions.compressionDefault,
   }) async {
     _url = url;
-    _socketStateCallback = socketStateCallback;
-    _loginStateCallback = loginStateCallback;
+    _retryCount = retryCount;
+    _originRetryCount = retryCount;
+    _retryDuration = retryDuration ?? const Duration(seconds: 1);
+    _retryCallback = retryCallback;
     _pingInterval = pingInterval;
     _protocols = protocols;
     _headers = headers;
@@ -83,20 +73,21 @@ class BetterWebSocketApi {
     _connectWebSocket();
   }
 
+  // 连接web socket, 需要防止多次调用
   _connectWebSocket() async {
-    // 开始连接
-    if (_socketStateCallback != null) {
-      _socketStateCallback(false);
+    if (_webSocketConnecting) {
+      return;
     }
-    if (_loginStateCallback != null) {
-      _loginStateCallback(false);
+
+    _webSocketConnecting = true;
+    if (socketStateCallback != null) {
+      socketStateCallback(BetterWebSocketConnectState.CONNECTING);
     }
-    _isSocketConnecting = true;
+    print("web socket 连接中...");
 
     // 创建连接
     WebSocket socket;
-    while (!_isStopSocket) {
-      print("web socket 连接中...");
+    while (true) {
       try {
         socket = await WebSocket.connect(
           _url,
@@ -105,95 +96,144 @@ class BetterWebSocketApi {
           compression: _compression,
         );
       } catch (error) {
-        print("web socket 连接失败, 1s 后重试");
-        // 关闭连接, 并重试
         socket?.close();
-        await Future.delayed(Duration(seconds: 1));
 
-        continue;
+        if (_isStopSocket) {
+          _webSocketConnecting = false;
+          return;
+        }
+
+        if (_hasRetryLogic() && _retryCount > 0) {
+          print("web socket 连接失败, ${_retryDuration.inSeconds}s 后重试");
+
+          if (_retryCallback != null) {
+            _retryCallback(_retryCount);
+          }
+          _retryCount--;
+
+          await Future.delayed(_retryDuration);
+
+          if (_isStopSocket) {
+            _webSocketConnecting = false;
+            return;
+          }
+
+          continue;
+        }
+
+        if (_hasRetryLogic() && _retryCount == 0) {
+          print("web socket 连接失败, 重试次数已经用完");
+          if (_retryCallback != null) {
+            _retryCallback(_retryCount);
+          }
+
+          _webSocketConnecting = false;
+
+          if (socketStateCallback != null) {
+            socketStateCallback(BetterWebSocketConnectState.FAIL);
+          }
+          return;
+        }
+
+        print("web socket 连接失败");
+        _webSocketConnecting = false;
+        if (socketStateCallback != null) {
+          socketStateCallback(BetterWebSocketConnectState.FAIL);
+        }
+        return;
       }
-
-      print("web socket 连接成功");
-      socket.pingInterval = _pingInterval;
 
       // 关闭连接
       if (_isStopSocket) {
         socket?.close();
+        _webSocketConnecting = false;
         return;
       }
 
+      print("web socket 连接成功");
+      socket.pingInterval = _pingInterval;
+      if (_hasRetryLogic()) {
+        _retryCount = _originRetryCount;
+      }
+      if (socketStateCallback != null) {
+        socketStateCallback(BetterWebSocketConnectState.SUCCESS);
+      }
       break;
     }
 
     // 创建通道
     _channel = IOWebSocketChannel(socket);
 
-    // 连接成功
-    if (_socketStateCallback != null) {
-      _socketStateCallback(true);
-    }
-    _isSocketConnecting = false;
-
-    // 处理连接错误
-    void handleSocketError() {
-      _channel = null;
-      if (_socketStateCallback != null) {
-        _socketStateCallback(false);
-      }
-      if (_loginStateCallback != null) {
-        _loginStateCallback(false);
-      }
-
-      // 连接断开, 进行重连
-      if (!_isStopSocket) {
-        _reConnectWebSocket();
-      }
-    }
-
     // 监听数据
-    _subscription = _channel.stream.listen((data) async {
-      if (!_isStopSocket) {
-        if (_loginCompleter != null && !_loginCompleter.isCompleted) {
-          print("web socket 收到登录结果");
-
-          // 处理登录结果
-          final loginResult = await _onLoginCallback(data);
-          _loginCompleter.complete(loginResult);
-        } else if (_onReceiveDataCallback != null) {
-          print("web socket 收到消息");
-
-          // 解析数据, 更新设备信息
-          _onReceiveDataCallback(data);
-        }
-      }
+    _socketSubscription = _channel.stream.listen((data) {
+      _handleSocketData(data);
     }, onError: (error) {
-      handleSocketError();
+      print("连接异常");
+      _handleSocketError();
     }, onDone: () async {
-      handleSocketError();
+      print("服务器中断连接");
+      _handleSocketError();
     });
 
     // 监听网络变化
-    _connectivitySubscription = Connectivity()
-        .onConnectivityChanged
-        .listen((ConnectivityResult result) {
-      if (_channel != null) {
-        _channel.sink.close();
+    final currentConnectivity = Connectivity().checkConnectivity();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((ConnectivityResult result) async {
+      final initResult = await currentConnectivity;
+      if (initResult != result) {
+        print("网络波动, 连接中断");
+        _handleSocketError();
       }
-      handleSocketError();
     });
+
+    _webSocketConnecting = false;
   }
 
-  // 发生错误重连
-  _reConnectWebSocket() async {
-
-    if (_isSocketConnecting || _isStopSocket) {
+  // 处理连接错误
+  _handleSocketError() {
+    if (_isStopSocket) {
       return;
     }
 
-    _isSocketConnecting = true;
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
 
-    print("web socket 连接异常断开, 1s 后重试");
-    await Future.delayed(Duration(seconds: 1));
+    _socketSubscription?.cancel();
+    _socketSubscription = null;
+
+    _channel?.sink?.close();
+    _channel = null;
+
+    if (socketStateCallback != null) {
+      socketStateCallback(BetterWebSocketConnectState.FAIL);
+    }
+
+    // 连接断开, 进行重连
+    _reconnectWebSocket();
+  }
+
+  // 重连
+  _reconnectWebSocket() async {
+    if (!_hasRetryLogic()) {
+      print("web socket 连接异常断开");
+      return;
+    }
+
+    if (_retryCount == 0) {
+      print("web socket 连接异常断开, 重试次数已经用完");
+      if (_retryCallback != null) {
+        _retryCallback(_retryCount);
+      }
+      return;
+    }
+
+    print("web socket 连接异常断开, ${_retryDuration.inSeconds}s 后重试");
+
+    if (_retryCallback != null) {
+      _retryCallback(_retryCount);
+    }
+    _retryCount--;
+
+    await Future.delayed(_retryDuration);
 
     if (_isStopSocket) {
       return;
@@ -201,14 +241,18 @@ class BetterWebSocketApi {
 
     // 重连web socket
     _connectWebSocket();
+  }
 
-    // 重新登录
-    if (_loginData != null && _onLoginCallback != null) {
-      final loginData = _loginData;
-      final onLoginCallback = _onLoginCallback;
-      _loginData = null;
-      _onLoginCallback = null;
-      setLoginData(loginData, onLoginCallback);
+  // 处理监听到的数据
+  _handleSocketData(dynamic data) async {
+    if (_isStopSocket) {
+      return;
+    }
+
+    print("web socket 收到消息");
+
+    if (receiveDataCallback != null) {
+      receiveDataCallback(data);
     }
   }
 
@@ -217,131 +261,38 @@ class BetterWebSocketApi {
     if (_isStopSocket) {
       return;
     }
+    _isStopSocket = true;
 
     print("web socket 连接关闭");
 
-    _isStopSocket = true;
-    _isSocketConnecting = false;
-
-    // 取消重登
-    if (_loginSubscription != null) {
-      _loginSubscription.cancel();
-    }
-
-    // 如果登录没有完成, 强制结束登录
-    if (_loginCompleter != null && !_loginCompleter.isCompleted) {
-      _loginCompleter.complete(BetterWebSocketLoginResult.FAIL);
-    }
-
-    // 更新状态
-    if (_socketStateCallback != null) {
-      _socketStateCallback(false);
-    }
-    if (_loginStateCallback != null) {
-      _loginStateCallback(false);
-    }
-
-    // 关闭socket
-    if (_channel != null) {
-      _channel.sink.close();
-    }
-
-    // 关闭数据监听
-    if (_subscription != null) {
-      _subscription.cancel();
+    if (socketStateCallback != null) {
+      socketStateCallback(BetterWebSocketConnectState.FAIL);
     }
 
     // 关闭网络监听
-    if (_connectivitySubscription != null) {
-      _connectivitySubscription.cancel();
-    }
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
+
+    // 关闭socket监听
+    _socketSubscription?.cancel();
+    _socketSubscription = null;
+
+    // 关闭socket
+    _channel?.sink?.close();
+    _channel = null;
   }
 
-  /// 设置登录数据
-  void setLoginData(
-    String loginData,
-    BetterWebSocketLoginCallback onLoginCallback,
-  ) {
-    if (_loginData == loginData) {
-      return;
-    }
-
-    _loginData = loginData;
-    _onLoginCallback = onLoginCallback;
-
-    if (_loginSubscription != null) {
-      _loginSubscription.cancel();
-    }
-
-    _loginSubscription = _login(loginData, onLoginCallback).listen((event) {});
-    _loginSubscription.onDone(() {
-      _loginSubscription = null;
-    });
-  }
-
-  /// 登录
-  Stream<int> _login(
-    String loginData,
-    BetterWebSocketLoginCallback onLoginCallback,
-  ) async* {
-    if (_loginStateCallback != null) {
-      _loginStateCallback(false);
-    }
-
-    _loginCompleter = Completer();
-
-    // 发送数据给服务器进行登录
-    if (_channel != null && loginData != null) {
-      _channel.sink.add(loginData);
-
-      print("web socket 发送登录信息");
-
-      // 控制登录超时时间
-      Future.delayed(Duration(seconds: 3)).then((value) {
-        if (!_loginCompleter.isCompleted) {
-          _loginCompleter.complete(BetterWebSocketLoginResult.TIMEOUT);
-        }
-      });
-    } else {
-      // socket连接中, 等待一会再试
-      await Future.delayed(Duration(seconds: 1));
-      if (!_loginCompleter.isCompleted) {
-        _loginCompleter.complete(BetterWebSocketLoginResult.TIMEOUT);
-      }
-    }
-
-    // 等待服务器返回登录结果
-    final result = await _loginCompleter.future;
-
-    yield 1;
-
-    // 登录成功
-    if (result == BetterWebSocketLoginResult.SUCCESS) {
-      if (_loginStateCallback != null) {
-        _loginStateCallback(true);
-      }
-      return;
-    }
-
-    // 登录失败
-    if (result == BetterWebSocketLoginResult.FAIL) {
-      // 等待一会再重试登录
-      await Future.delayed(Duration(seconds: 3));
-
-      yield 2;
-
-      yield* _login(loginData, onLoginCallback);
-    }
-
-    // 登录超时
-    if (result == BetterWebSocketLoginResult.TIMEOUT) {
-      yield* _login(loginData, onLoginCallback);
-    }
-  }
-
-  void sendData(String data) {
+  bool sendData(dynamic data) {
     if (_channel != null && data != null) {
       _channel.sink.add(data);
+      return true;
+    } else {
+      return false;
     }
+  }
+
+  // 判断是否有重连逻辑
+  bool _hasRetryLogic() {
+    return _retryCount != null;
   }
 }

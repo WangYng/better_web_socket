@@ -8,7 +8,7 @@ Advanced web socket based on web_socket_channel.
 
 ```yaml
 dependencies:
-  better_web_socket: ^0.0.4
+  better_web_socket: ^0.0.5
 ```
 
 2. Install it
@@ -20,20 +20,48 @@ $ flutter packages get
 ## Normal usage
 
 ```dart
-context.read<DeviceWebSocketController>().onReceiveDataCallback = ((data) async {
-  setState(() {
-    receiveDataList.add("${DateTime.now().toString().substring(0, 19)} $data");
-    scrollController.animateTo(0, duration: Duration(milliseconds: 350), curve: Curves.linear);
+void connect(BuildContext context) {
+  // 监听数据
+  receiveDataSubscription?.cancel();
+  receiveDataSubscription = context.read<DeviceWebSocketController>().receiveDataStream.listen((data) {
+    context.read<DeviceWebSocketController>().handleSendDataResponse(sendingDataId ?? 0, true);
+    setState(() {
+      receiveDataList.add("${DateTime.now().toString().substring(0, 19)} $data");
+    });
   });
-});
-context.read<DeviceWebSocketController>().startWebSocketConnect();
-// ....
-context.read<DeviceWebSocketController>().stopWebSocketConnectAfter();
+  
+  // 监听socket请求数据响应结果
+  sendDataResponseStateSubscription?.cancel();
+  sendDataResponseStateSubscription = context.read<DeviceWebSocketController>().sendDataResponseStateStream.listen((data) {
+    String result = "";
+    switch(data.item2) {
+      case BetterWebSocketSendDataResponseState.SUCCESS:
+        result = "send data success";
+        break;
+      case BetterWebSocketSendDataResponseState.FAIL:
+        result = "send data failure";
+        break;
+      case BetterWebSocketSendDataResponseState.TIMEOUT:
+        result = "send data timeout";
+        break;
+    }
+    print(result);
+  });
+  
+  // 连接 web socket
+  context.read<DeviceWebSocketController>().startWebSocketConnect(retryCount: double.maxFinite.toInt());
+}
+
+void disconnect(BuildContext context, Duration duration) {
+  context.read<DeviceWebSocketController>().stopWebSocketConnectAfter(duration: duration);
+}
+
+void sendData() {
+  sendingDataId = context.read<DeviceWebSocketController>().sendData(jsonEncode(loginData), retryCount: 3);
+}
 ```
 
 ## Feature
 - [x] reconnect
 - [x] delay disconnect
-- [x] login logic
-
-
+- [x] simulate HTTP request
