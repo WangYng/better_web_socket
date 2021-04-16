@@ -12,3 +12,6 @@ fix some issues.
 
 ## 0.0.5
 remove logic of login.
+
+## 0.0.6
+fix some issues.

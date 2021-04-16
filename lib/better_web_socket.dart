@@ -18,6 +18,10 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
 
   StreamSubscription _stopSocketSubscription;
 
+  StreamController<BetterWebSocketConnectState> _socketConnectStateStreamController = StreamController.broadcast();
+
+  Stream<BetterWebSocketConnectState> get socketConnectStateStream => _socketConnectStateStreamController.stream;
+
   // 监听数据流
   StreamController<dynamic> _receiveDataStreamController = StreamController.broadcast();
 
@@ -57,6 +61,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
         _cancelAllSending();
       }
       value = value.copyWith(socketState: state);
+      _socketConnectStateStreamController.sink.add(state);
     };
 
     _api.receiveDataCallback = (data) {
@@ -175,6 +180,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
 
   @override
   void dispose() {
+    _socketConnectStateStreamController.close();
     _receiveDataStreamController.close();
     _sendDataResponseStateStreamController.close();
     super.dispose();
