@@ -5,7 +5,7 @@ import 'package:better_web_socket/better_web_socket_api.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:tuple/tuple.dart';
 
-enum BetterWebSocketSendDataResponseState {
+enum BetterWebSocketResponseState {
   SUCCESS, // 消息发送成功
   FAIL, // 消息发送失败
   TIMEOUT, // 消息发送超时
@@ -31,16 +31,15 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
   Map<int, StreamSubscription> _sendDataRetrySubscriptionMap = {};
 
   // 监听消息发送状态
-  StreamController<Tuple2<int, BetterWebSocketSendDataResponseState>> _sendDataResponseStateStreamController =
+  StreamController<Tuple2<int, BetterWebSocketResponseState>> _responseStateStreamController =
       StreamController.broadcast();
 
-  Stream<Tuple2<int, BetterWebSocketSendDataResponseState>> get sendDataResponseStateStream =>
-      _sendDataResponseStateStreamController.stream;
+  Stream<Tuple2<int, BetterWebSocketResponseState>> get responseStateStream => _responseStateStreamController.stream;
 
   /// 连接 web socket
-  startWebSocketConnect({
+  void startWebSocketConnect({
     int retryCount,
-    Duration retryDuration,
+    Duration retryDuration = const Duration(seconds: 1),
     ValueChanged<int> retryCallback,
     Duration pingInterval = const Duration(seconds: 30),
     Iterable<String> protocols,
@@ -58,7 +57,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
 
     _api.socketStateCallback = (state) {
       if (state == BetterWebSocketConnectState.FAIL) {
-        _cancelAllSending();
+        _cancelAllSendingWhenSocketAbort();
       }
       value = value.copyWith(socketState: state);
       _socketConnectStateStreamController.sink.add(state);
@@ -88,7 +87,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
   }
 
   /// 断开 web socket
-  stopWebSocketConnectAfter({Duration duration = const Duration(seconds: 3)}) {
+  void stopWebSocketConnectAfter({Duration duration = const Duration(seconds: 3)}) {
     if (duration != null && duration != Duration.zero) {
       // 延迟断开
       _stopSocketSubscription?.cancel();
@@ -113,19 +112,24 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
     }
   }
 
-  /// 发送数据, 立即返回生成的消息id. 会重复发送消息, 直到调用 handleSendDataResponse 确认消息回执已经收到
-  int sendData(
+  /// 发送数据. 需要调用 handleSendDataResponse 确认消息回执已经收到
+  void sendDataAndWaitResponse(
+    int requestId,
     dynamic data, {
     Duration timeoutDuration = const Duration(seconds: 1),
     int retryCount,
-    Duration retryDuration = const Duration(seconds: 1),
+    Duration retryDuration,
   }) {
     bool result = _api?.sendData(data) ?? false;
     if (result) {
-      print("web socket 发送消息");
+      print("web socket send data");
+    } else {
+      // 当前没有连接web socket, 返回失败
+      Future.microtask(() {
+        handleResponse(requestId, BetterWebSocketResponseState.FAIL);
+      });
+      return;
     }
-
-    int currentTimeInterval = DateTime.now().millisecondsSinceEpoch;
 
     // 监听消息发送超时
     stream() async* {
@@ -134,12 +138,16 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
       yield 1;
 
       // 重复发送消息
-      if (retryCount != null && retryDuration != null) {
+      if (retryCount != null && retryCount > 0 && retryDuration != null) {
         int count = retryCount;
         while (count > 0) {
           bool result = _api?.sendData(data) ?? false;
           if (result) {
-            print("web socket 发送消息");
+            print("web socket send data");
+          } else {
+            // 当前没有连接web socket, 返回失败
+            handleResponse(requestId, BetterWebSocketResponseState.FAIL);
+            return;
           }
 
           await Future.delayed(retryDuration);
@@ -148,41 +156,44 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
         }
       }
 
-      // 消息发送超时
-      _sendDataResponseStateStreamController.sink
-          .add(Tuple2(currentTimeInterval, BetterWebSocketSendDataResponseState.TIMEOUT));
-      _sendDataRetrySubscriptionMap.remove(currentTimeInterval);
+      handleResponse(requestId, BetterWebSocketResponseState.TIMEOUT);
     }
 
-    _sendDataRetrySubscriptionMap[currentTimeInterval] = stream().listen((event) {});
-
-    return currentTimeInterval;
+    _sendDataRetrySubscriptionMap[requestId] = stream().listen((event) {});
   }
 
   // 处理发消息的回执
-  handleSendDataResponse(int dataId, bool success) {
-    // 关闭消息发送重试
-    _sendDataRetrySubscriptionMap[dataId]?.cancel();
-    _sendDataRetrySubscriptionMap.remove(dataId);
+  void handleResponse(int requestId, BetterWebSocketResponseState state) {
+    if (_sendDataRetrySubscriptionMap.containsKey(requestId)) {
+      _sendDataRetrySubscriptionMap[requestId]?.cancel();
+      _sendDataRetrySubscriptionMap.remove(requestId);
+    }
 
-    final state = success ? BetterWebSocketSendDataResponseState.SUCCESS : BetterWebSocketSendDataResponseState.FAIL;
-    _sendDataResponseStateStreamController.sink.add(Tuple2(dataId, state));
+    _responseStateStreamController.sink.add(Tuple2(requestId, state));
+  }
+
+  void sendData(dynamic data) {
+    _api?.sendData(data);
   }
 
   // 取消所有发送中的消息
-  _cancelAllSending() {
-    _sendDataRetrySubscriptionMap.keys.forEach((dataId) {
-      _sendDataRetrySubscriptionMap[dataId]?.cancel();
-      _sendDataResponseStateStreamController.sink.add(Tuple2(dataId, BetterWebSocketSendDataResponseState.FAIL));
+  void _cancelAllSendingWhenSocketAbort() {
+    _sendDataRetrySubscriptionMap.keys.forEach((requestId) {
+      _sendDataRetrySubscriptionMap[requestId]?.cancel();
+
+      final state = BetterWebSocketResponseState.FAIL;
+      _responseStateStreamController.sink.add(Tuple2(requestId, state));
     });
+
     _sendDataRetrySubscriptionMap.clear();
   }
 
   @override
   void dispose() {
+    stopWebSocketConnectAfter();
     _socketConnectStateStreamController.close();
     _receiveDataStreamController.close();
-    _sendDataResponseStateStreamController.close();
+    _responseStateStreamController.close();
     super.dispose();
   }
 }

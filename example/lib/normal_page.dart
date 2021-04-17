@@ -24,13 +24,14 @@ class _NormalPageState extends State<NormalPage> {
   TextEditingController textEditingController = TextEditingController();
 
   StreamSubscription receiveDataSubscription;
-  StreamSubscription sendDataResponseStateSubscription;
+  StreamSubscription responseStateSubscription;
+  StreamSubscription loginCompleteSubscription;
 
-  int sendingDataId;
+  List<int> clientRequestIdList = [];
 
   @override
   Widget build(BuildContext context) {
-    final controller = context.watch<DeviceWebSocketController>();
+    final controller = context.watch<MyWebSocketController>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('web socket'),
@@ -153,41 +154,69 @@ class _NormalPageState extends State<NormalPage> {
     );
   }
 
-  void connect(BuildContext context) {
-    // 监听数据
-    receiveDataSubscription?.cancel();
-    receiveDataSubscription = context.read<DeviceWebSocketController>().receiveDataStream.listen((data) {
-      context.read<DeviceWebSocketController>().handleSendDataResponse(sendingDataId ?? 0, true);
-      setState(() {
-        receiveDataList.add("${DateTime.now().toString().substring(0, 19)} $data");
-        scrollController.animateTo(0, duration: Duration(milliseconds: 350), curve: Curves.linear);
+  @override
+  void initState() {
+    super.initState();
+
+    Future.microtask(() {
+      MyWebSocketController controller = context.read<MyWebSocketController>();
+
+      receiveDataSubscription?.cancel();
+      receiveDataSubscription = controller.receiveDataStream.listen((data) {
+        int clientRequestId =
+            clientRequestIdList.length > 0 ? clientRequestIdList.first : 0; // TODO  clientRequestId from server
+        if (clientRequestIdList.contains(clientRequestId)) {
+          controller.handleResponse(clientRequestId, BetterWebSocketResponseState.SUCCESS);
+        }
+        setState(() {
+          receiveDataList.add("${DateTime.now().toString().substring(0, 19)} $data");
+          scrollController.animateTo(0, duration: Duration(milliseconds: 350), curve: Curves.linear);
+        });
+      });
+
+      responseStateSubscription?.cancel();
+      responseStateSubscription = controller.responseStateStream.listen((data) {
+        int clientRequestId = data.item1;
+        if (clientRequestIdList.contains(clientRequestId)) {
+          clientRequestIdList.remove(clientRequestId);
+
+          String result = "";
+          switch (data.item2) {
+            case BetterWebSocketResponseState.SUCCESS:
+              result = "send data success";
+              break;
+            case BetterWebSocketResponseState.FAIL:
+              result = "send data failure";
+              break;
+            case BetterWebSocketResponseState.TIMEOUT:
+              result = "send data timeout";
+              break;
+          }
+          print(result);
+        }
+      });
+
+      loginCompleteSubscription?.cancel();
+      loginCompleteSubscription = controller.loginCompleteStream.listen((data) {
+        setState(() {
+          receiveDataList.add("${DateTime.now().toString().substring(0, 19)} login success");
+          scrollController.animateTo(0, duration: Duration(milliseconds: 350), curve: Curves.linear);
+        });
       });
     });
+  }
 
-    // 监听socket请求数据响应结果
-    sendDataResponseStateSubscription?.cancel();
-    sendDataResponseStateSubscription = context.read<DeviceWebSocketController>().sendDataResponseStateStream.listen((data) {
-      String result = "";
-      switch(data.item2) {
-        case BetterWebSocketSendDataResponseState.SUCCESS:
-          result = "send data success";
-          break;
-        case BetterWebSocketSendDataResponseState.FAIL:
-          result = "send data failure";
-          break;
-        case BetterWebSocketSendDataResponseState.TIMEOUT:
-          result = "send data timeout";
-          break;
-      }
-      print(result);
-    });
+  void connect(BuildContext context) {
+    MyWebSocketController controller = context.read<MyWebSocketController>();
 
     // 连接 web socket
-    context.read<DeviceWebSocketController>().startWebSocketConnect(retryCount: double.maxFinite.toInt());
+    controller.startWebSocketConnect(retryCount: double.maxFinite.toInt(), retryDuration: Duration(seconds: 1));
   }
 
   void disconnect(BuildContext context, Duration duration) {
-    context.read<DeviceWebSocketController>().stopWebSocketConnectAfter(duration: duration);
+    MyWebSocketController controller = context.read<MyWebSocketController>();
+
+    controller?.stopWebSocketConnectAfter(duration: duration);
   }
 
   void clear(BuildContext context) {
@@ -196,12 +225,18 @@ class _NormalPageState extends State<NormalPage> {
     });
   }
 
-  void sendText(String content) {
-    sendingDataId = context.read<DeviceWebSocketController>().sendData(content, retryCount: 3);
+  void sendData() {
+    MyWebSocketController controller = context.read<MyWebSocketController>();
+
+    int clientRequestId = DateTime.now().millisecondsSinceEpoch;
+    clientRequestIdList.add(clientRequestId);
+
+    controller.sendDataAndWaitResponse(clientRequestId, jsonEncode(commonData), retryCount: 3);
   }
 
-  void sendData() {
-    sendingDataId = context.read<DeviceWebSocketController>().sendData(jsonEncode(loginData), retryCount: 3);
+  void sendText(String content) {
+    MyWebSocketController controller = context.read<MyWebSocketController>();
+    controller.sendData(content);
   }
 
   String socketState(BetterWebSocketConnectState state) {
@@ -225,8 +260,9 @@ class _NormalPageState extends State<NormalPage> {
   void dispose() {
     scrollController.dispose();
     textEditingController.dispose();
-    receiveDataSubscription.cancel();
-    sendDataResponseStateSubscription.cancel();
+    receiveDataSubscription?.cancel();
+    responseStateSubscription?.cancel();
+    loginCompleteSubscription?.cancel();
     super.dispose();
   }
 }

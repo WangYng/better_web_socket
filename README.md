@@ -8,7 +8,7 @@ Advanced web socket based on web_socket_channel.
 
 ```yaml
 dependencies:
-  better_web_socket: ^0.0.6
+  better_web_socket: ^0.0.7
 ```
 
 2. Install it
@@ -20,35 +20,39 @@ $ flutter packages get
 ## Normal usage
 
 ```dart
-void connect(BuildContext context) {
-  // 监听数据
+void receiveData(BuildContext context) {
+  MyWebSocketController controller = context.read<MyWebSocketController>();
+
   receiveDataSubscription?.cancel();
-  receiveDataSubscription = context.read<DeviceWebSocketController>().receiveDataStream.listen((data) {
-    context.read<DeviceWebSocketController>().handleSendDataResponse(sendingDataId ?? 0, true);
-    setState(() {
-      receiveDataList.add("${DateTime.now().toString().substring(0, 19)} $data");
-    });
+  receiveDataSubscription = controller.receiveDataStream.listen((data) {
+    int clientRequestId = parse(data).clientRequestId; // TODO  clientRequestId from server
+    controller.handleSendDataResponse(clientRequestId, BetterWebSocketSendDataResponseState.SUCCESS);
   });
-  
-  // 监听socket请求数据响应结果
+
   sendDataResponseStateSubscription?.cancel();
-  sendDataResponseStateSubscription = context.read<DeviceWebSocketController>().sendDataResponseStateStream.listen((data) {
-    String result = "";
-    switch(data.item2) {
-      case BetterWebSocketSendDataResponseState.SUCCESS:
-        result = "send data success";
-        break;
-      case BetterWebSocketSendDataResponseState.FAIL:
-        result = "send data failure";
-        break;
-      case BetterWebSocketSendDataResponseState.TIMEOUT:
-        result = "send data timeout";
-        break;
+  sendDataResponseStateSubscription = controller.sendDataResponseStateStream.listen((data) {
+    int clientRequestId = data.item1;
+    if (clientRequestIdList.contains(clientRequestId)) {
+      clientRequestIdList.remove(clientRequestId);
+
+      String result = "";
+      switch (data.item2) {
+        case BetterWebSocketSendDataResponseState.SUCCESS:
+          result = "send data success";
+          break;
+        case BetterWebSocketSendDataResponseState.FAIL:
+          result = "send data failure";
+          break;
+        case BetterWebSocketSendDataResponseState.TIMEOUT:
+          result = "send data timeout";
+          break;
+      }
+      print(result);
     }
-    print(result);
   });
-  
-  // 连接 web socket
+}
+
+void connect(BuildContext context) {
   context.read<DeviceWebSocketController>().startWebSocketConnect(retryCount: double.maxFinite.toInt());
 }
 
@@ -57,7 +61,7 @@ void disconnect(BuildContext context, Duration duration) {
 }
 
 void sendData() {
-  sendingDataId = context.read<DeviceWebSocketController>().sendData(jsonEncode(loginData), retryCount: 3);
+  context.read<DeviceWebSocketController>().sendDataAndWaitResponse(clientRequestId, data, retryCount: 3);
 }
 ```
 
@@ -65,3 +69,4 @@ void sendData() {
 - [x] reconnect
 - [x] delay disconnect
 - [x] simulate HTTP request
+- [x] auto login when socket connected

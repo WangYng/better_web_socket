@@ -7,9 +7,9 @@ import 'package:tuple/tuple.dart';
 import 'package:web_socket_channel/io.dart';
 
 enum BetterWebSocketConnectState {
-  SUCCESS, // 连接成功
-  FAIL, // 连接失败
-  CONNECTING, // 连接中
+  SUCCESS,
+  FAIL,
+  CONNECTING,
 }
 
 class BetterWebSocketApi {
@@ -63,7 +63,7 @@ class BetterWebSocketApi {
     _url = url;
     _retryCount = retryCount;
     _originRetryCount = retryCount;
-    _retryDuration = retryDuration ?? const Duration(seconds: 1);
+    _retryDuration = retryDuration;
     _retryCallback = retryCallback;
     _pingInterval = pingInterval;
     _protocols = protocols;
@@ -83,7 +83,7 @@ class BetterWebSocketApi {
     if (socketStateCallback != null) {
       socketStateCallback(BetterWebSocketConnectState.CONNECTING);
     }
-    print("web socket 连接中...");
+    print("web socket connecting...");
 
     // 创建连接
     WebSocket socket;
@@ -104,7 +104,7 @@ class BetterWebSocketApi {
         }
 
         if (_hasRetryLogic() && _retryCount > 0) {
-          print("web socket 连接失败, ${_retryDuration.inSeconds}s 后重试");
+          print("web socket retry after ${_retryDuration.inSeconds}s");
 
           if (_retryCallback != null) {
             _retryCallback(_retryCount);
@@ -122,7 +122,7 @@ class BetterWebSocketApi {
         }
 
         if (_hasRetryLogic() && _retryCount == 0) {
-          print("web socket 连接失败, 重试次数已经用完");
+          print("web socket connectivity failure");
           if (_retryCallback != null) {
             _retryCallback(_retryCount);
           }
@@ -135,7 +135,7 @@ class BetterWebSocketApi {
           return;
         }
 
-        print("web socket 连接失败");
+        print("web socket connectivity failure");
         _webSocketConnecting = false;
         if (socketStateCallback != null) {
           socketStateCallback(BetterWebSocketConnectState.FAIL);
@@ -150,7 +150,7 @@ class BetterWebSocketApi {
         return;
       }
 
-      print("web socket 连接成功");
+      print("web socket connectivity success");
       socket.pingInterval = _pingInterval;
       if (_hasRetryLogic()) {
         _retryCount = _originRetryCount;
@@ -168,10 +168,10 @@ class BetterWebSocketApi {
     _socketSubscription = _channel.stream.listen((data) {
       _handleSocketData(data);
     }, onError: (error) {
-      print("连接异常");
+      print("web socket connectivity error");
       _handleSocketError();
     }, onDone: () async {
-      print("服务器中断连接");
+      print("web socket connectivity broken");
       _handleSocketError();
     });
 
@@ -180,7 +180,7 @@ class BetterWebSocketApi {
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((ConnectivityResult result) async {
       final initResult = await currentConnectivity;
       if (initResult != result) {
-        print("网络波动, 连接中断");
+        print("web socket connectivity broken");
         _handleSocketError();
       }
     });
@@ -214,19 +214,17 @@ class BetterWebSocketApi {
   // 重连
   _reconnectWebSocket() async {
     if (!_hasRetryLogic()) {
-      print("web socket 连接异常断开");
       return;
     }
 
     if (_retryCount == 0) {
-      print("web socket 连接异常断开, 重试次数已经用完");
       if (_retryCallback != null) {
         _retryCallback(_retryCount);
       }
       return;
     }
 
-    print("web socket 连接异常断开, ${_retryDuration.inSeconds}s 后重试");
+    print("web socket retry after ${_retryDuration.inSeconds}s");
 
     if (_retryCallback != null) {
       _retryCallback(_retryCount);
@@ -249,7 +247,7 @@ class BetterWebSocketApi {
       return;
     }
 
-    print("web socket 收到消息");
+    print("web socket receive data");
 
     if (receiveDataCallback != null) {
       receiveDataCallback(data);
@@ -263,7 +261,7 @@ class BetterWebSocketApi {
     }
     _isStopSocket = true;
 
-    print("web socket 连接关闭");
+    print("web socket stop connectivity");
 
     if (socketStateCallback != null) {
       socketStateCallback(BetterWebSocketConnectState.FAIL);
@@ -293,6 +291,6 @@ class BetterWebSocketApi {
 
   // 判断是否有重连逻辑
   bool _hasRetryLogic() {
-    return _retryCount != null;
+    return _retryCount != null && _retryCount > 0 && _retryDuration != null && _retryDuration != Duration.zero;
   }
 }
