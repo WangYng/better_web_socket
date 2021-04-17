@@ -22,6 +22,7 @@ class _NormalPageState extends State<NormalPage> {
 
   ScrollController scrollController = ScrollController();
   TextEditingController textEditingController = TextEditingController();
+  MyWebSocketController controller;
 
   StreamSubscription receiveDataSubscription;
   StreamSubscription responseStateSubscription;
@@ -159,7 +160,7 @@ class _NormalPageState extends State<NormalPage> {
     super.initState();
 
     Future.microtask(() {
-      MyWebSocketController controller = context.read<MyWebSocketController>();
+      controller = context.read<MyWebSocketController>();
 
       receiveDataSubscription?.cancel();
       receiveDataSubscription = controller.receiveDataStream.listen((data) {
@@ -207,15 +208,10 @@ class _NormalPageState extends State<NormalPage> {
   }
 
   void connect(BuildContext context) {
-    MyWebSocketController controller = context.read<MyWebSocketController>();
-
-    // 连接 web socket
     controller.startWebSocketConnect(retryCount: double.maxFinite.toInt(), retryDuration: Duration(seconds: 1));
   }
 
   void disconnect(BuildContext context, Duration duration) {
-    MyWebSocketController controller = context.read<MyWebSocketController>();
-
     controller?.stopWebSocketConnectAfter(duration: duration);
   }
 
@@ -226,8 +222,6 @@ class _NormalPageState extends State<NormalPage> {
   }
 
   void sendData() {
-    MyWebSocketController controller = context.read<MyWebSocketController>();
-
     int clientRequestId = DateTime.now().millisecondsSinceEpoch;
     clientRequestIdList.add(clientRequestId);
 
@@ -235,7 +229,6 @@ class _NormalPageState extends State<NormalPage> {
   }
 
   void sendText(String content) {
-    MyWebSocketController controller = context.read<MyWebSocketController>();
     controller.sendData(content);
   }
 
@@ -263,6 +256,7 @@ class _NormalPageState extends State<NormalPage> {
     receiveDataSubscription?.cancel();
     responseStateSubscription?.cancel();
     loginCompleteSubscription?.cancel();
+    controller.stopWebSocketConnectAfter();
     super.dispose();
   }
 }
