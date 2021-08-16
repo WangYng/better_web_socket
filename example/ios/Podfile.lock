@@ -1,5 +1,5 @@
 PODS:
-  - better_web_socket (0.0.1):
+  - better_web_socket (0.0.7):
     - Flutter
   - connectivity (0.0.1):
     - Flutter
@@ -25,11 +25,11 @@ EXTERNAL SOURCES:
     :path: Flutter
 
 SPEC CHECKSUMS:
-  better_web_socket: 6bda19211889e2ab06a894fb76ae6191fa4497d1
+  better_web_socket: 9e439c542b754b9c5ce62e372653aef13dc668ad
   connectivity: c4130b2985d4ef6fd26f9702e886bd5260681467
   Flutter: 0e3d915762c693b495b44d77113d4970485de6ec
   Reachability: 33e18b67625424e47b6cde6d202dce689ad7af96
 
 PODFILE CHECKSUM: 8e679eca47255a8ca8067c4c67aab20e64cb974d
 
-COCOAPODS: 1.9.3
+COCOAPODS: 1.10.1

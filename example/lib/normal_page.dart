@@ -9,6 +9,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 class NormalPage extends StatefulWidget {
   @override
@@ -29,6 +30,8 @@ class _NormalPageState extends State<NormalPage> {
   StreamSubscription loginCompleteSubscription;
 
   List<int> clientRequestIdList = [];
+
+  UniqueKey visibilityDetectorKey = UniqueKey();
 
   @override
   Widget build(BuildContext context) {
@@ -73,9 +76,25 @@ class _NormalPageState extends State<NormalPage> {
                 scrollDirection: Axis.vertical,
                 child: Column(
                   children: [
-                    Container(
-                      padding: EdgeInsets.all(8),
-                      child: Text("url : ${controller.value.url}"),
+                    VisibilityDetector(
+                      key: visibilityDetectorKey,
+                      child: Container(
+                        padding: EdgeInsets.all(8),
+                        child: Text("url : ${controller.value.url}"),
+                      ),
+                      onVisibilityChanged: (VisibilityInfo info) {
+                        // 这个框架在回调时有一个延迟, 目的是为了去重, 防止连续多次回调,
+                        // 相同的key如果连续多次触发, 只会返回最后一次
+                        // 如果不同的页面使用相同的Key, 同样也会去重
+                        // 当dispose后也会回调一次 visibleFraction = 0
+                        if (!_dispose) {
+                          if (info.visibleFraction > 0 ) {
+                            print("页面显示");
+                          } else {
+                            print("不显示");
+                          }
+                        }
+                      },
                     ),
                     Container(
                       padding: EdgeInsets.all(8),
@@ -119,6 +138,16 @@ class _NormalPageState extends State<NormalPage> {
                       child: Text("clear log"),
                       onPressed: () {
                         clear(context);
+                      },
+                    ),
+                    CupertinoButton(
+                      child: Text("push next page"),
+                      onPressed: () {
+                        Navigator.of(context).push(CupertinoPageRoute(
+                          builder: (context) {
+                            return NormalPage();
+                          },
+                        ));
                       },
                     ),
                     Row(
@@ -249,6 +278,7 @@ class _NormalPageState extends State<NormalPage> {
     return result;
   }
 
+  bool _dispose = false;
   @override
   void dispose() {
     scrollController.dispose();
@@ -257,6 +287,9 @@ class _NormalPageState extends State<NormalPage> {
     responseStateSubscription?.cancel();
     loginCompleteSubscription?.cancel();
     controller.stopWebSocketConnectAfter();
+
+    _dispose = true;
+    print("页面关闭");
     super.dispose();
   }
 }
