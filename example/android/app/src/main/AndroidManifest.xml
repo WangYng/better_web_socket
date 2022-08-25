@@ -9,7 +9,6 @@
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
-        android:name="io.flutter.app.FlutterApplication"
         android:label="better_web_socket_example"
         android:icon="@mipmap/ic_launcher">
         <activity

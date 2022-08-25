@@ -4,12 +4,10 @@ import 'dart:convert';
 import 'package:better_web_socket/better_web_socket.dart';
 import 'package:better_web_socket/better_web_socket_api.dart';
 import 'package:better_web_socket_example/constant.dart';
-import 'package:better_web_socket_example/main.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
-import 'package:visibility_detector/visibility_detector.dart';
 
 class NormalPage extends StatefulWidget {
   @override
@@ -23,11 +21,9 @@ class _NormalPageState extends State<NormalPage> {
 
   ScrollController scrollController = ScrollController();
   TextEditingController textEditingController = TextEditingController();
-  MyWebSocketController controller;
+  BetterWebSocketController controller;
 
   StreamSubscription receiveDataSubscription;
-  StreamSubscription responseStateSubscription;
-  StreamSubscription loginCompleteSubscription;
 
   List<int> clientRequestIdList = [];
 
@@ -35,7 +31,7 @@ class _NormalPageState extends State<NormalPage> {
 
   @override
   Widget build(BuildContext context) {
-    final controller = context.watch<MyWebSocketController>();
+    final controller = context.watch<BetterWebSocketController>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('web socket'),
@@ -76,26 +72,6 @@ class _NormalPageState extends State<NormalPage> {
                 scrollDirection: Axis.vertical,
                 child: Column(
                   children: [
-                    VisibilityDetector(
-                      key: visibilityDetectorKey,
-                      child: Container(
-                        padding: EdgeInsets.all(8),
-                        child: Text("url : ${controller.value.url}"),
-                      ),
-                      onVisibilityChanged: (VisibilityInfo info) {
-                        // 这个框架在回调时有一个延迟, 目的是为了去重, 防止连续多次回调,
-                        // 相同的key如果连续多次触发, 只会返回最后一次
-                        // 如果不同的页面使用相同的Key, 同样也会去重
-                        // 当dispose后也会回调一次 visibleFraction = 0
-                        if (!_dispose) {
-                          if (info.visibleFraction > 0 ) {
-                            print("页面显示");
-                          } else {
-                            print("不显示");
-                          }
-                        }
-                      },
-                    ),
                     Container(
                       padding: EdgeInsets.all(8),
                       child: Text("socket connected : ${socketState(controller.value.socketState)}"),
@@ -112,7 +88,7 @@ class _NormalPageState extends State<NormalPage> {
                         CupertinoButton(
                           child: Text("disconnect"),
                           onPressed: () {
-                            disconnect(context, Duration(seconds: 3));
+                            disconnectAfter3Second(context);
                           },
                         ),
                       ],
@@ -129,7 +105,7 @@ class _NormalPageState extends State<NormalPage> {
                         CupertinoButton(
                           child: Text("disconnect_immediately"),
                           onPressed: () {
-                            disconnect(context, Duration.zero);
+                            disconnect(context);
                           },
                         ),
                       ],
@@ -138,16 +114,6 @@ class _NormalPageState extends State<NormalPage> {
                       child: Text("clear log"),
                       onPressed: () {
                         clear(context);
-                      },
-                    ),
-                    CupertinoButton(
-                      child: Text("push next page"),
-                      onPressed: () {
-                        Navigator.of(context).push(CupertinoPageRoute(
-                          builder: (context) {
-                            return NormalPage();
-                          },
-                        ));
                       },
                     ),
                     Row(
@@ -189,47 +155,12 @@ class _NormalPageState extends State<NormalPage> {
     super.initState();
 
     Future.microtask(() {
-      controller = context.read<MyWebSocketController>();
+      controller = context.read<BetterWebSocketController>();
 
       receiveDataSubscription?.cancel();
       receiveDataSubscription = controller.receiveDataStream.listen((data) {
-        int clientRequestId =
-            clientRequestIdList.length > 0 ? clientRequestIdList.first : 0; // TODO  clientRequestId from server
-        if (clientRequestIdList.contains(clientRequestId)) {
-          controller.handleResponse(clientRequestId, BetterWebSocketResponseState.SUCCESS);
-        }
         setState(() {
           receiveDataList.add("${DateTime.now().toString().substring(0, 19)} $data");
-          scrollController.animateTo(0, duration: Duration(milliseconds: 350), curve: Curves.linear);
-        });
-      });
-
-      responseStateSubscription?.cancel();
-      responseStateSubscription = controller.responseStateStream.listen((data) {
-        int clientRequestId = data.item1;
-        if (clientRequestIdList.contains(clientRequestId)) {
-          clientRequestIdList.remove(clientRequestId);
-
-          String result = "";
-          switch (data.item2) {
-            case BetterWebSocketResponseState.SUCCESS:
-              result = "send data success";
-              break;
-            case BetterWebSocketResponseState.FAIL:
-              result = "send data failure";
-              break;
-            case BetterWebSocketResponseState.TIMEOUT:
-              result = "send data timeout";
-              break;
-          }
-          print(result);
-        }
-      });
-
-      loginCompleteSubscription?.cancel();
-      loginCompleteSubscription = controller.loginCompleteStream.listen((data) {
-        setState(() {
-          receiveDataList.add("${DateTime.now().toString().substring(0, 19)} login success");
           scrollController.animateTo(0, duration: Duration(milliseconds: 350), curve: Curves.linear);
         });
       });
@@ -240,8 +171,12 @@ class _NormalPageState extends State<NormalPage> {
     controller.startWebSocketConnect(retryCount: double.maxFinite.toInt(), retryDuration: Duration(seconds: 1));
   }
 
-  void disconnect(BuildContext context, Duration duration) {
-    controller?.stopWebSocketConnectAfter(duration: duration);
+  void disconnect(BuildContext context) {
+    controller?.stopWebSocketConnectAfter(duration: Duration.zero);
+  }
+
+  void disconnectAfter3Second(BuildContext context) {
+    controller?.stopWebSocketConnectAfter(duration: Duration(seconds: 3));
   }
 
   void clear(BuildContext context) {
@@ -251,10 +186,7 @@ class _NormalPageState extends State<NormalPage> {
   }
 
   void sendData() {
-    int clientRequestId = DateTime.now().millisecondsSinceEpoch;
-    clientRequestIdList.add(clientRequestId);
-
-    controller.sendDataAndWaitResponse(clientRequestId, jsonEncode(commonData), retryCount: 3);
+    controller.sendData(jsonEncode(commonData));
   }
 
   void sendText(String content) {
@@ -278,18 +210,13 @@ class _NormalPageState extends State<NormalPage> {
     return result;
   }
 
-  bool _dispose = false;
   @override
   void dispose() {
     scrollController.dispose();
     textEditingController.dispose();
     receiveDataSubscription?.cancel();
-    responseStateSubscription?.cancel();
-    loginCompleteSubscription?.cancel();
     controller.stopWebSocketConnectAfter();
 
-    _dispose = true;
-    print("页面关闭");
     super.dispose();
   }
 }

@@ -6,3 +6,4 @@
 
 build/
 constant.dart
+.idea/*

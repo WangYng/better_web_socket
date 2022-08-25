@@ -28,13 +28,14 @@ class BetterWebSocketApi {
   // 监听数据流
   ValueChanged<dynamic> receiveDataCallback;
 
-  // 重试
+  // 重连
   int _retryCount;
   int _originRetryCount;
   Duration _retryDuration;
   ValueChanged<int> _retryCallback;
 
   // web socket 信道
+  WebSocket _socket;
   IOWebSocketChannel _channel;
 
   // 数据监听
@@ -48,6 +49,8 @@ class BetterWebSocketApi {
 
   // 是否已经关闭
   bool _isStopSocket = false;
+
+  bool get isStopSocket => _isStopSocket;
 
   /// 启动WebSocket连接
   startWebSocketConnect(
@@ -75,7 +78,7 @@ class BetterWebSocketApi {
 
   // 连接web socket, 需要防止多次调用
   _connectWebSocket() async {
-    if (_webSocketConnecting) {
+    if (_webSocketConnecting || _isStopSocket) {
       return;
     }
 
@@ -86,23 +89,17 @@ class BetterWebSocketApi {
     print("web socket connecting...");
 
     // 创建连接
-    WebSocket socket;
     while (true) {
       try {
-        socket = await WebSocket.connect(
-          _url,
-          protocols: _protocols,
-          headers: _headers,
-          compression: _compression,
-        );
+        _socket = await WebSocket.connect(_url, protocols: _protocols, headers: _headers, compression: _compression);
       } catch (error) {
-        socket?.close();
+        _socket?.close();
 
         if (_isStopSocket) {
-          _webSocketConnecting = false;
           return;
         }
 
+        // 重连
         if (_hasRetryLogic() && _retryCount > 0) {
           print("web socket retry after ${_retryDuration.inSeconds}s");
 
@@ -114,13 +111,13 @@ class BetterWebSocketApi {
           await Future.delayed(_retryDuration);
 
           if (_isStopSocket) {
-            _webSocketConnecting = false;
             return;
           }
 
           continue;
         }
 
+        // 重连结束
         if (_hasRetryLogic() && _retryCount == 0) {
           print("web socket connectivity failure");
           if (_retryCallback != null) {
@@ -128,6 +125,7 @@ class BetterWebSocketApi {
           }
 
           _webSocketConnecting = false;
+          _isStopSocket = true;
 
           if (socketStateCallback != null) {
             socketStateCallback(BetterWebSocketConnectState.FAIL);
@@ -135,8 +133,11 @@ class BetterWebSocketApi {
           return;
         }
 
+        // 没有重连流程，正常结束
         print("web socket connectivity failure");
         _webSocketConnecting = false;
+        _isStopSocket = true;
+
         if (socketStateCallback != null) {
           socketStateCallback(BetterWebSocketConnectState.FAIL);
         }
@@ -145,13 +146,12 @@ class BetterWebSocketApi {
 
       // 关闭连接
       if (_isStopSocket) {
-        socket?.close();
-        _webSocketConnecting = false;
+        _socket?.close();
         return;
       }
 
       print("web socket connectivity success");
-      socket.pingInterval = _pingInterval;
+      _socket.pingInterval = _pingInterval;
       if (_hasRetryLogic()) {
         _retryCount = _originRetryCount;
       }
@@ -162,7 +162,7 @@ class BetterWebSocketApi {
     }
 
     // 创建通道
-    _channel = IOWebSocketChannel(socket);
+    _channel = IOWebSocketChannel(_socket);
 
     // 监听数据
     _socketSubscription = _channel.stream.listen((data) {
@@ -172,7 +172,7 @@ class BetterWebSocketApi {
       _handleSocketError();
     }, onDone: () async {
       print("web socket connectivity broken");
-      _handleSocketError();
+      _handleSocketError(duration: _retryDuration);
     });
 
     // 监听网络变化
@@ -189,7 +189,7 @@ class BetterWebSocketApi {
   }
 
   // 处理连接错误
-  _handleSocketError() {
+  _handleSocketError({Duration duration}) async {
     if (_isStopSocket) {
       return;
     }
@@ -201,44 +201,27 @@ class BetterWebSocketApi {
     _socketSubscription = null;
 
     _channel?.sink?.close();
+    _socket = null;
     _channel = null;
 
-    if (socketStateCallback != null) {
-      socketStateCallback(BetterWebSocketConnectState.FAIL);
-    }
+    if (_hasRetryLogic()) {
+      if (duration != null) {
+        if (socketStateCallback != null) {
+          socketStateCallback(BetterWebSocketConnectState.FAIL);
+        }
 
-    // 连接断开, 进行重连
-    _reconnectWebSocket();
-  }
-
-  // 重连
-  _reconnectWebSocket() async {
-    if (!_hasRetryLogic()) {
-      return;
-    }
-
-    if (_retryCount == 0) {
-      if (_retryCallback != null) {
-        _retryCallback(_retryCount);
+        await Future.delayed(duration);
       }
-      return;
+      // 异常中断进行重连
+      _connectWebSocket();
+    } else {
+      // 没有重连流程，正常结束
+      _isStopSocket = true;
+
+      if (socketStateCallback != null) {
+        socketStateCallback(BetterWebSocketConnectState.FAIL);
+      }
     }
-
-    print("web socket retry after ${_retryDuration.inSeconds}s");
-
-    if (_retryCallback != null) {
-      _retryCallback(_retryCount);
-    }
-    _retryCount--;
-
-    await Future.delayed(_retryDuration);
-
-    if (_isStopSocket) {
-      return;
-    }
-
-    // 重连web socket
-    _connectWebSocket();
   }
 
   // 处理监听到的数据
@@ -263,10 +246,6 @@ class BetterWebSocketApi {
 
     print("web socket stop connectivity");
 
-    if (socketStateCallback != null) {
-      socketStateCallback(BetterWebSocketConnectState.FAIL);
-    }
-
     // 关闭网络监听
     _connectivitySubscription?.cancel();
     _connectivitySubscription = null;
@@ -277,11 +256,19 @@ class BetterWebSocketApi {
 
     // 关闭socket
     _channel?.sink?.close();
+    _socket = null;
     _channel = null;
+
+    if (socketStateCallback != null) {
+      socketStateCallback(BetterWebSocketConnectState.FAIL);
+    }
+
+    receiveDataCallback = null;
+    socketStateCallback = null;
   }
 
   bool sendData(dynamic data) {
-    if (_channel != null && data != null) {
+    if (_isStopSocket == false && _channel != null && data != null) {
       _channel.sink.add(data);
       return true;
     } else {
