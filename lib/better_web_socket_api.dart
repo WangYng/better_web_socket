@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:connectivity/connectivity.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:tuple/tuple.dart';
 import 'package:web_socket_channel/io.dart';
 
 enum BetterWebSocketConnectState {
