@@ -27,3 +27,6 @@ fix some issues.
 
 ## 0.1.0
 fix some issues.
+
+## 1.0.0
+fix some issues.

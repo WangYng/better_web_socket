@@ -20,6 +20,7 @@ class BetterWebSocketApi {
   Iterable<String> _protocols;
   Map<String, dynamic> _headers;
   CompressionOptions _compression;
+  String _proxy;
 
   // 监听socket状态
   ValueChanged<BetterWebSocketConnectState> socketStateCallback;
@@ -61,6 +62,7 @@ class BetterWebSocketApi {
     Iterable<String> protocols,
     Map<String, dynamic> headers,
     CompressionOptions compression = CompressionOptions.compressionDefault,
+    String proxy,
   }) async {
     _url = url;
     _retryCount = retryCount;
@@ -71,6 +73,7 @@ class BetterWebSocketApi {
     _protocols = protocols;
     _headers = headers;
     _compression = compression;
+    _proxy = proxy;
 
     _connectWebSocket();
   }
@@ -90,7 +93,15 @@ class BetterWebSocketApi {
     // 创建连接
     while (true) {
       try {
-        _socket = await WebSocket.connect(_url, protocols: _protocols, headers: _headers, compression: _compression);
+        if (_proxy?.isNotEmpty ?? false) {
+          final client = HttpClient();
+          client.findProxy = (uri) => "PROXY $_proxy;";
+          client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+
+          _socket = await WebSocket.connect(_url, protocols: _protocols, headers: _headers, compression: _compression, customClient: client);
+        } else {
+          _socket = await WebSocket.connect(_url, protocols: _protocols, headers: _headers, compression: _compression);
+        }
       } catch (error) {
         _socket?.close();
 

@@ -35,6 +35,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
     Iterable<String> protocols,
     Map<String, dynamic> headers,
     CompressionOptions compression = CompressionOptions.compressionDefault,
+    String proxy,
   }) {
     // 如果socket没有中断，再次连接时，直接复用
     if (_api != null && _api.isStopSocket == false) {
@@ -67,6 +68,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
       protocols: protocols,
       headers: headers,
       compression: compression,
+      proxy: proxy,
     );
   }
 
@@ -81,6 +83,7 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
         _api?.stopWebSocketConnect();
         _api = null;
       }
+
       _stopSocketSubscription?.cancel();
       _stopSocketSubscription = handler().listen((event) {});
     } else {
@@ -90,7 +93,6 @@ class BetterWebSocketController extends ValueNotifier<BetterWebSocketValue> {
       _api = null;
     }
   }
-
 
   void sendData(dynamic data) {
     _api?.sendData(data);
