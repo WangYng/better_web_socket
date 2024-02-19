@@ -13,36 +13,36 @@ enum BetterWebSocketConnectState {
 
 class BetterWebSocketApi {
   // web socket 连接时必要信息
-  String _url;
+  late String _url;
 
   // web socket 连接时可选信息
-  Duration _pingInterval;
-  Iterable<String> _protocols;
-  Map<String, dynamic> _headers;
-  CompressionOptions _compression;
-  String _proxy;
+  Duration? _pingInterval;
+  Iterable<String>? _protocols;
+  Map<String, dynamic>? _headers;
+  late CompressionOptions _compression;
+  String? _proxy;
 
   // 监听socket状态
-  ValueChanged<BetterWebSocketConnectState> socketStateCallback;
+  ValueChanged<BetterWebSocketConnectState>? socketStateCallback;
 
   // 监听数据流
-  ValueChanged<dynamic> receiveDataCallback;
+  ValueChanged<dynamic>? receiveDataCallback;
 
   // 重连
-  int _retryCount;
-  int _originRetryCount;
-  Duration _retryDuration;
-  ValueChanged<int> _retryCallback;
+  int? _retryCount;
+  int? _originRetryCount;
+  Duration? _retryDuration;
+  ValueChanged<int>? _retryCallback;
 
   // web socket 信道
-  WebSocket _socket;
-  IOWebSocketChannel _channel;
+  WebSocket? _socket;
+  IOWebSocketChannel? _channel;
 
   // 数据监听
-  StreamSubscription _socketSubscription;
+  StreamSubscription? _socketSubscription;
 
   // 网络监听
-  StreamSubscription _connectivitySubscription;
+  StreamSubscription? _connectivitySubscription;
 
   // 连接中
   bool _webSocketConnecting = false;
@@ -55,14 +55,14 @@ class BetterWebSocketApi {
   /// 启动WebSocket连接
   startWebSocketConnect(
     String url, {
-    int retryCount,
-    Duration retryDuration,
-    ValueChanged<int> retryCallback,
-    Duration pingInterval,
-    Iterable<String> protocols,
-    Map<String, dynamic> headers,
+    int? retryCount,
+    Duration? retryDuration,
+    ValueChanged<int>? retryCallback,
+    Duration? pingInterval,
+    Iterable<String>? protocols,
+    Map<String, dynamic>? headers,
     CompressionOptions compression = CompressionOptions.compressionDefault,
-    String proxy,
+    String? proxy,
   }) async {
     _url = url;
     _retryCount = retryCount;
@@ -86,7 +86,7 @@ class BetterWebSocketApi {
 
     _webSocketConnecting = true;
     if (socketStateCallback != null) {
-      socketStateCallback(BetterWebSocketConnectState.CONNECTING);
+      socketStateCallback!(BetterWebSocketConnectState.CONNECTING);
     }
     print("web socket connecting...");
 
@@ -110,15 +110,15 @@ class BetterWebSocketApi {
         }
 
         // 重连
-        if (_hasRetryLogic() && _retryCount > 0) {
-          print("web socket retry after ${_retryDuration.inSeconds}s");
+        if (_hasRetryLogic() && _retryCount! > 0) {
+          print("web socket retry after ${_retryDuration!.inSeconds}s");
 
           if (_retryCallback != null) {
-            _retryCallback(_retryCount);
+            _retryCallback!(_retryCount!);
           }
-          _retryCount--;
+          _retryCount = _retryCount! - 1;
 
-          await Future.delayed(_retryDuration);
+          await Future.delayed(_retryDuration!);
 
           if (_isStopSocket) {
             return;
@@ -131,14 +131,14 @@ class BetterWebSocketApi {
         if (_hasRetryLogic() && _retryCount == 0) {
           print("web socket connectivity failure");
           if (_retryCallback != null) {
-            _retryCallback(_retryCount);
+            _retryCallback!(_retryCount!);
           }
 
           _webSocketConnecting = false;
           _isStopSocket = true;
 
           if (socketStateCallback != null) {
-            socketStateCallback(BetterWebSocketConnectState.FAIL);
+            socketStateCallback!(BetterWebSocketConnectState.FAIL);
           }
           return;
         }
@@ -149,7 +149,7 @@ class BetterWebSocketApi {
         _isStopSocket = true;
 
         if (socketStateCallback != null) {
-          socketStateCallback(BetterWebSocketConnectState.FAIL);
+          socketStateCallback!(BetterWebSocketConnectState.FAIL);
         }
         return;
       }
@@ -161,28 +161,28 @@ class BetterWebSocketApi {
       }
 
       print("web socket connectivity success");
-      _socket.pingInterval = _pingInterval;
+      _socket?.pingInterval = _pingInterval;
       if (_hasRetryLogic()) {
         _retryCount = _originRetryCount;
       }
       if (socketStateCallback != null) {
-        socketStateCallback(BetterWebSocketConnectState.SUCCESS);
+        socketStateCallback!(BetterWebSocketConnectState.SUCCESS);
       }
       break;
     }
 
     // 创建通道
-    _channel = IOWebSocketChannel(_socket);
+    _channel = IOWebSocketChannel(_socket!);
 
     // 监听数据
-    _socketSubscription = _channel.stream.listen((data) {
+    _socketSubscription = _channel?.stream.listen((data) {
       _handleSocketData(data);
     }, onError: (error) {
       print("web socket connectivity error");
       _handleSocketError();
     }, onDone: () async {
       print("web socket connectivity broken");
-      _handleSocketError(duration: _retryDuration);
+      _handleSocketError();
     });
 
     // 监听网络变化
@@ -199,7 +199,7 @@ class BetterWebSocketApi {
   }
 
   // 处理连接错误
-  _handleSocketError({Duration duration}) async {
+  _handleSocketError() async {
     if (_isStopSocket) {
       return;
     }
@@ -210,18 +210,17 @@ class BetterWebSocketApi {
     _socketSubscription?.cancel();
     _socketSubscription = null;
 
-    _channel?.sink?.close();
+    _channel?.sink.close();
     _socket = null;
     _channel = null;
 
     if (_hasRetryLogic()) {
-      if (duration != null) {
-        if (socketStateCallback != null) {
-          socketStateCallback(BetterWebSocketConnectState.FAIL);
-        }
-
-        await Future.delayed(duration);
+      if (socketStateCallback != null) {
+        socketStateCallback!(BetterWebSocketConnectState.FAIL);
       }
+
+      await Future.delayed(_retryDuration!);
+
       // 异常中断进行重连
       _connectWebSocket();
     } else {
@@ -229,7 +228,7 @@ class BetterWebSocketApi {
       _isStopSocket = true;
 
       if (socketStateCallback != null) {
-        socketStateCallback(BetterWebSocketConnectState.FAIL);
+        socketStateCallback!(BetterWebSocketConnectState.FAIL);
       }
     }
   }
@@ -243,7 +242,7 @@ class BetterWebSocketApi {
     print("web socket receive data");
 
     if (receiveDataCallback != null) {
-      receiveDataCallback(data);
+      receiveDataCallback!(data);
     }
   }
 
@@ -265,12 +264,12 @@ class BetterWebSocketApi {
     _socketSubscription = null;
 
     // 关闭socket
-    _channel?.sink?.close();
+    _channel?.sink.close();
     _socket = null;
     _channel = null;
 
     if (socketStateCallback != null) {
-      socketStateCallback(BetterWebSocketConnectState.FAIL);
+      socketStateCallback!(BetterWebSocketConnectState.FAIL);
     }
 
     receiveDataCallback = null;
@@ -279,7 +278,7 @@ class BetterWebSocketApi {
 
   bool sendData(dynamic data) {
     if (_isStopSocket == false && _channel != null && data != null) {
-      _channel.sink.add(data);
+      _channel!.sink.add(data);
       return true;
     } else {
       return false;
@@ -288,6 +287,6 @@ class BetterWebSocketApi {
 
   // 判断是否有重连逻辑
   bool _hasRetryLogic() {
-    return _retryCount != null && _retryCount > 0 && _retryDuration != null && _retryDuration != Duration.zero;
+    return _originRetryCount != null && _originRetryCount! > 0 && _retryDuration != null && _retryDuration != Duration.zero;
   }
 }

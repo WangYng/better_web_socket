@@ -8,7 +8,7 @@ Advanced web socket based on web_socket_channel.
 
 ```yaml
 dependencies:
-  better_web_socket: ^1.0.0
+  better_web_socket: ^1.0.1
 ```
 
 2. Install it
